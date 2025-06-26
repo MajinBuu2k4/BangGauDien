@@ -6,18 +6,24 @@ DB = 'used_users.json'
 
 @app.route('/')
 def home():
-    return "Server is running."
+    return "✅ Server is running."
 
 @app.route('/submit', methods=['POST'])
 def submit():
     data = request.json
-    print(f"Received: {data}")
+    print(f"[+] Received: {data}")
 
-    # Ghi vào file
+    if not isinstance(data, dict) or "user" not in data or "password" not in data:
+        return jsonify({"status": "error", "message": "invalid payload"}), 400
+
+    # Ghi vào file JSON
     records = []
     if os.path.exists(DB):
         with open(DB, 'r') as f:
-            records = json.load(f)
+            try:
+                records = json.load(f)
+            except json.JSONDecodeError:
+                records = []
 
     records.append(data)
 
@@ -28,7 +34,10 @@ def submit():
 
 @app.route('/list', methods=['GET'])
 def list_users():
-    if not os.path.exists(DB):
-        return jsonify([])
-    with open(DB, 'r') as f:
-        return jsonify(json.load(f))
+    if os.path.exists(DB):
+        with open(DB, 'r') as f:
+            try:
+                return jsonify(json.load(f))
+            except json.JSONDecodeError:
+                return jsonify([])
+    return jsonify([])
