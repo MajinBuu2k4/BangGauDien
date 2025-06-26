@@ -41,3 +41,7 @@ def list_users():
             except json.JSONDecodeError:
                 return jsonify([])
     return jsonify([])
+
+# ✅ Dòng QUAN TRỌNG để Railway chạy được
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
