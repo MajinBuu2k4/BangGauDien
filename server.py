@@ -44,4 +44,7 @@ def list_users():
 
 # ✅ Dòng QUAN TRỌNG để Railway chạy được
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))  # 👈 Railway tự set biến PORT cho đúng
+    print(f"🚀 Starting app on port {port}")
+    app.run(host="0.0.0.0", port=port)
+# ✅ Railway sẽ tự động chạy file này khi deploy
