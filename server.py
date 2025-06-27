@@ -4,6 +4,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 DB = 'used_users.json'
+LICENSE_DB = 'licenses.json'
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -110,6 +111,92 @@ def delete_entry(index):
                 json.dump(records, f, indent=2)
 
     return redirect(url_for('admin_panel'))
+
+@app.route("/activate-key", methods=["POST"])
+def activate_key():
+    data = request.json
+    if not isinstance(data, dict):
+        return "Invalid data format", 400
+
+    key = data.get("key")
+    hwid = data.get("hwid")
+    mcuser = data.get("mcuser")
+
+    if not key or not hwid or not mcuser:
+        return "Missing required fields", 400
+
+    licenses = {}
+    if os.path.exists(LICENSE_DB):
+        with open(LICENSE_DB, 'r') as f:
+            try:
+                licenses = json.load(f)
+            except json.JSONDecodeError:
+                licenses = {}
+
+    if key not in licenses:
+        return jsonify({
+            "status": "invalid",
+            "message": "Key không tồn tại trong danh sách cấp phép."
+        }), 403
+
+    entry = licenses[key]
+
+    # Chưa từng dùng
+    if entry is None:
+        licenses[key] = {
+            "used_by": mcuser,
+            "hwid": hwid,
+            "used_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(LICENSE_DB, 'w') as f:
+            json.dump(licenses, f, indent=2)
+        return jsonify({"status": "ok"})
+
+    # Đã dùng rồi → kiểm tra HWID + user trùng
+    if entry.get("hwid") == hwid and entry.get("used_by") == mcuser:
+        return jsonify({"status": "ok"})
+
+    # Dùng máy khác
+    return jsonify({
+        "status": "error",
+        "message": "Key đã được sử dụng bởi thiết bị khác.",
+        "used_by": entry.get("used_by"),
+        "hwid": entry.get("hwid"),
+        "used_at": entry.get("used_at")
+    }), 403
+
+@app.route("/check-key", methods=["POST"])
+def check_key():
+    data = request.json
+    key = data.get("key")
+
+    if not key:
+        return jsonify({"status": "error", "message": "Thiếu key."}), 400
+
+    licenses = {}
+    if os.path.exists(LICENSE_DB):
+        with open(LICENSE_DB, 'r') as f:
+            try:
+                licenses = json.load(f)
+            except json.JSONDecodeError:
+                licenses = {}
+
+    if key not in licenses:
+        return jsonify({
+            "status": "invalid",
+            "message": "Key không tồn tại trong danh sách cấp phép."
+        }), 404
+
+    if licenses[key] is None:
+        return jsonify({
+            "status": "available",
+            "message": "Key hợp lệ và chưa được sử dụng."
+        })
+
+    return jsonify({
+        "status": "used",
+        **licenses[key]
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
