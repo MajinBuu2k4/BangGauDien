@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for
 import json, os
+from datetime import datetime
 
 app = Flask(__name__)
 DB = 'used_users.json'
@@ -31,6 +32,7 @@ HTML_TEMPLATE = '''
                     <th>#</th>
                     <th>Username</th>
                     <th>Password</th>
+                    <th>Time</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -40,6 +42,7 @@ HTML_TEMPLATE = '''
                     <td>{{ loop.index }}</td>
                     <td>{{ r.user }}</td>
                     <td>{{ r.password }}</td>
+                    <td>{{ r.time }}</td>
                     <td>
                         <form method="POST" action="/delete/{{ loop.index0 }}">
                             <button type="submit">Delete</button>
@@ -74,6 +77,7 @@ def submit():
             except json.JSONDecodeError:
                 records = []
 
+    data["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     records.append(data)
     with open(DB, 'w') as f:
         json.dump(records, f, indent=2)
