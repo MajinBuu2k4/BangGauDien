@@ -5,7 +5,7 @@ import requests
 app = Flask(__name__)
 
 SUPABASE_URL = "https://ldhdtghrvijamxhukcxu.supabase.co"
-SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkaGR0Z2hydmlqYW14aHVrY3h1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEwNzMzNTQsImV4cCI6MjA2NjY0OTM1NH0.zpJsvWxQ1PAnikU53Yzu2DZutvCJgIqdPYM6TqukA-g"
+SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkaGR0Z2hydmlqYW14aHVrY3h1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTA3MzM1NCwiZXhwIjoyMDY2NjQ5MzU0fQ.a1GToBO0lVcNtIVWF4U05b7bWQaOOCgd_A23ijZsc7I"
 HEADERS = {
     "apikey": SUPABASE_API_KEY,
     "Authorization": f"Bearer {SUPABASE_API_KEY}"
