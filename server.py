@@ -6,7 +6,7 @@ import os
 app = Flask(__name__)
 
 SUPABASE_URL = "https://ldhdtghrvijamxhukcxu.supabase.co"
-SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."  # Đã rút gọn cho bảo mật
+SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkaGR0Z2hydmlqYW14aHVrY3h1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTA3MzM1NCwiZXhwIjoyMDY2NjQ5MzU0fQ.a1GToBO0lVcNtIVWF4U05b7bWQaOOCgd_A23ijZsc7I"  # Đã rút gọn
 HEADERS = {
     "apikey": SUPABASE_API_KEY,
     "Authorization": f"Bearer {SUPABASE_API_KEY}"
@@ -31,15 +31,18 @@ def activate_key():
         f"{SUPABASE_URL}/rest/v1/used_keys?key=eq.{key}",
         headers=HEADERS
     )
-    if check_used.json():
-        entry = check_used.json()[0]
-        if entry["hwid"] == hwid and entry["used_by"] == mcuser:
-            return jsonify({"status": "ok"})
-        return jsonify({
-            "status": "error",
-            "message": "Key đã được sử dụng bởi thiết bị khác.",
-            **entry
-        }), 403
+
+    if check_used.status_code == 200:
+        used_data = check_used.json()
+        if isinstance(used_data, list) and len(used_data) > 0:
+            entry = used_data[0]
+            if entry["hwid"] == hwid and entry["used_by"] == mcuser:
+                return jsonify({"status": "ok"})
+            return jsonify({
+                "status": "error",
+                "message": "Key đã được sử dụng bởi thiết bị khác.",
+                **entry
+            }), 403
 
     # Kiểm tra key có hợp lệ không
     check_license = requests.get(
@@ -91,10 +94,11 @@ def check_key():
         f"{SUPABASE_URL}/rest/v1/used_keys?key=eq.{key}",
         headers=HEADERS
     )
-    if check_used.json():
+    used_data = check_used.json()
+    if isinstance(used_data, list) and len(used_data) > 0:
         return jsonify({
             "status": "used",
-            **check_used.json()[0]
+            **used_data[0]
         })
 
     return jsonify({
