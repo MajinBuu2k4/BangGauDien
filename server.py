@@ -5,6 +5,7 @@ from datetime import datetime
 app = Flask(__name__)
 DB = 'used_users.json'
 LICENSE_DB = 'licenses.json'
+USED_KEYS_DB = 'used_keys.json'
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -126,6 +127,8 @@ def activate_key():
         return "Missing required fields", 400
 
     licenses = {}
+    used_keys = {}
+
     if os.path.exists(LICENSE_DB):
         with open(LICENSE_DB, 'r') as f:
             try:
@@ -133,37 +136,39 @@ def activate_key():
             except json.JSONDecodeError:
                 licenses = {}
 
-    if key not in licenses:
+    if os.path.exists(USED_KEYS_DB):
+        with open(USED_KEYS_DB, 'r') as f:
+            try:
+                used_keys = json.load(f)
+            except json.JSONDecodeError:
+                used_keys = {}
+
+    if key in used_keys:
+        entry = used_keys[key]
+        if entry.get("hwid") == hwid and entry.get("used_by") == mcuser:
+            return jsonify({"status": "ok"})
         return jsonify({
-            "status": "invalid",
-            "message": "Key không tồn tại trong danh sách cấp phép."
+            "status": "error",
+            "message": "Key đã được sử dụng bởi thiết bị khác.",
+            **entry
         }), 403
 
-    entry = licenses[key]
+    if key not in licenses:
+        return jsonify({"status": "invalid", "message": "Key không tồn tại trong danh sách cấp phép."}), 403
 
-    # Chưa từng dùng
-    if entry is None:
-        licenses[key] = {
-            "used_by": mcuser,
-            "hwid": hwid,
-            "used_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        with open(LICENSE_DB, 'w') as f:
-            json.dump(licenses, f, indent=2)
-        return jsonify({"status": "ok"})
+    used_keys[key] = {
+        "used_by": mcuser,
+        "hwid": hwid,
+        "used_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    licenses.pop(key, None)
 
-    # Đã dùng rồi → kiểm tra HWID + user trùng
-    if entry.get("hwid") == hwid and entry.get("used_by") == mcuser:
-        return jsonify({"status": "ok"})
+    with open(LICENSE_DB, 'w') as f:
+        json.dump(licenses, f, indent=2)
+    with open(USED_KEYS_DB, 'w') as f:
+        json.dump(used_keys, f, indent=2)
 
-    # Dùng máy khác
-    return jsonify({
-        "status": "error",
-        "message": "Key đã được sử dụng bởi thiết bị khác.",
-        "used_by": entry.get("used_by"),
-        "hwid": entry.get("hwid"),
-        "used_at": entry.get("used_at")
-    }), 403
+    return jsonify({"status": "ok"})
 
 @app.route("/check-key", methods=["POST"])
 def check_key():
@@ -174,6 +179,8 @@ def check_key():
         return jsonify({"status": "error", "message": "Thiếu key."}), 400
 
     licenses = {}
+    used_keys = {}
+
     if os.path.exists(LICENSE_DB):
         with open(LICENSE_DB, 'r') as f:
             try:
@@ -181,22 +188,19 @@ def check_key():
             except json.JSONDecodeError:
                 licenses = {}
 
-    if key not in licenses:
-        return jsonify({
-            "status": "invalid",
-            "message": "Key không tồn tại trong danh sách cấp phép."
-        }), 404
+    if os.path.exists(USED_KEYS_DB):
+        with open(USED_KEYS_DB, 'r') as f:
+            try:
+                used_keys = json.load(f)
+            except json.JSONDecodeError:
+                used_keys = {}
 
-    if licenses[key] is None:
-        return jsonify({
-            "status": "available",
-            "message": "Key hợp lệ và chưa được sử dụng."
-        })
-
-    return jsonify({
-        "status": "used",
-        **licenses[key]
-    })
+    if key in licenses:
+        return jsonify({"status": "available", "message": "Key hợp lệ và chưa được sử dụng."})
+    elif key in used_keys:
+        return jsonify({"status": "used", **used_keys[key]})
+    else:
+        return jsonify({"status": "invalid", "message": "Key không tồn tại."}), 404
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
