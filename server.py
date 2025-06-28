@@ -6,7 +6,7 @@ import os
 app = Flask(__name__)
 
 SUPABASE_URL = "https://ldhdtghrvijamxhukcxu.supabase.co"
-SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkaGR0Z2hydmlqYW14aHVrY3h1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTA3MzM1NCwiZXhwIjoyMDY2NjQ5MzU0fQ.a1GToBO0lVcNtIVWF4U05b7bWQaOOCgd_A23ijZsc7I"  # Đã rút gọn
+SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkaGR0Z2hydmlqYW14aHVrY3h1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTA3MzM1NCwiZXhwIjoyMDY2NjQ5MzU0fQ.a1GToBO0lVcNtIVWF4U05b7bWQaOOCgd_A23ijZsc7I"  # Rút gọn cho bảo mật
 HEADERS = {
     "apikey": SUPABASE_API_KEY,
     "Authorization": f"Bearer {SUPABASE_API_KEY}"
@@ -26,25 +26,18 @@ def activate_key():
     if not key or not hwid or not mcuser:
         return "Missing required fields", 400
 
-    # Kiểm tra key đã được sử dụng chưa
+    # ❌ Nếu key đã nằm trong bảng used_keys thì từ chối luôn
     check_used = requests.get(
         f"{SUPABASE_URL}/rest/v1/used_keys?key=eq.{key}",
         headers=HEADERS
     )
+    if check_used.json():
+        return jsonify({
+            "status": "error",
+            "message": "❌ Key đã được sử dụng."
+        }), 403
 
-    if check_used.status_code == 200:
-        used_data = check_used.json()
-        if isinstance(used_data, list) and len(used_data) > 0:
-            entry = used_data[0]
-            if entry["hwid"] == hwid and entry["used_by"] == mcuser:
-                return jsonify({"status": "ok"})
-            return jsonify({
-                "status": "error",
-                "message": "Key đã được sử dụng bởi thiết bị khác.",
-                **entry
-            }), 403
-
-    # Kiểm tra key có hợp lệ không
+    # ✅ Kiểm tra key trong bảng licenses
     check_license = requests.get(
         f"{SUPABASE_URL}/rest/v1/licenses?key=eq.{key}",
         headers=HEADERS
@@ -52,14 +45,15 @@ def activate_key():
     if not check_license.json():
         return jsonify({
             "status": "invalid",
-            "message": "Key không tồn tại trong danh sách cấp phép."
+            "message": "❌ Key không tồn tại hoặc đã bị thu hồi."
         }), 403
 
-    # Ghi vào bảng used_keys và xóa khỏi licenses
+    # ✅ Ghi key sang used_keys và xóa khỏi licenses
     requests.delete(
         f"{SUPABASE_URL}/rest/v1/licenses?key=eq.{key}",
         headers=HEADERS
     )
+
     used_data = {
         "key": key,
         "used_by": mcuser,
@@ -71,6 +65,7 @@ def activate_key():
         headers={**HEADERS, "Content-Type": "application/json"},
         json=used_data
     )
+
     return jsonify({"status": "ok"})
 
 @app.route("/check-key", methods=["POST"])
@@ -94,11 +89,10 @@ def check_key():
         f"{SUPABASE_URL}/rest/v1/used_keys?key=eq.{key}",
         headers=HEADERS
     )
-    used_data = check_used.json()
-    if isinstance(used_data, list) and len(used_data) > 0:
+    if check_used.json():
         return jsonify({
             "status": "used",
-            **used_data[0]
+            **check_used.json()[0]
         })
 
     return jsonify({
